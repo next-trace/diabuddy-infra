@@ -1,0 +1,20 @@
+# Real secrets must never be committed
+.env
+.env.*
+!.env.dist
+
+# OS / editors
+.DS_Store
+*.log
+.idea
+.vscode
+.qodo
+
+# Backups (local only)
+*.sql
+*.sql.gz
+*.sql.gz.gpg
+
+# Override user-global .scripts/* so committed helpers are versioned
+!.scripts/
+!.scripts/*

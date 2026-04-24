@@ -1,0 +1,34 @@
+name: Deploy to production
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+
+      - name: Deploy
+        run: |
+          ssh deploy@${{ secrets.DROPLET_HOST }} 'bash -s' < scripts/deploy.sh
+
+      - name: Verify healthz
+        run: |
+          ssh deploy@${{ secrets.DROPLET_HOST }} \
+            'curl -sfI https://api.${{ secrets.PROD_DOMAIN }}/healthz'

@@ -1,0 +1,51 @@
+# DiaBuddy production Caddyfile.
+# Auto-provisions Let's Encrypt TLS certificates using HTTP-01 challenge.
+# Requires droplet reachable on :80 and :443 + correct DNS A records.
+
+{
+	email {$CADDY_EMAIL}
+	# Default cert storage at /data (persisted via caddy_data volume)
+}
+
+api.{$DOMAIN} {
+	reverse_proxy user-api:8080
+
+	encode gzip zstd
+
+	# Security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+app.{$DOMAIN} {
+	reverse_proxy web:3000
+
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# Optional: redirect bare domain to the app.
+{$DOMAIN} {
+	redir https://app.{$DOMAIN}{uri} permanent
+}

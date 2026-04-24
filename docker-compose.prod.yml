@@ -1,0 +1,129 @@
+# DiaBuddy production stack — single DO droplet deployment.
+#
+# Services: caddy (public-facing TLS proxy), user-api (Go backend),
+#           postgres (data), web (Next.js frontend).
+#
+# Only caddy is exposed on the public internet (ports 80/443).
+# All other services communicate on the internal `diabuddy_net` bridge.
+
+name: diabuddy
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: diabuddy-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      user-api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    networks:
+      - diabuddy_net
+
+  user-api:
+    image: ghcr.io/next-trace/diabuddy-user-api:${USER_API_VERSION:-latest}
+    container_name: diabuddy-user-api
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      TIME_ZONE: Europe/Berlin
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_DATABASE: ${POSTGRES_DB}
+      SSL_MODE: disable
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      RUN_DB_MIGRATIONS: "true"
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET}
+      LOGGER_SINK: ${LOGGER_SINK:-stdout}
+      LOGGER_LEVEL: ${LOGGER_LEVEL:-info}
+      LOGGER_BETTERSTACK_SOURCE_TOKEN: ${LOGGER_BETTERSTACK_SOURCE_TOKEN:-}
+      LOGGER_BETTERSTACK_ENDPOINT: ${LOGGER_BETTERSTACK_ENDPOINT:-}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_PROVIDER_DEFAULT: ${AI_PROVIDER_DEFAULT:-}
+      AI_PROVIDER_CORE: ${AI_PROVIDER_CORE:-}
+      AI_PROVIDER_PLUS: ${AI_PROVIDER_PLUS:-}
+      AI_PROVIDER_CLINICIAN: ${AI_PROVIDER_CLINICIAN:-}
+      AI_PROVIDER_ENTERPRISE: ${AI_PROVIDER_ENTERPRISE:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - diabuddy_net
+
+  web:
+    image: ghcr.io/next-trace/diabuddy-web:${WEB_VERSION:-latest}
+    container_name: diabuddy-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      USER_API_BASE_URL: http://user-api:8080
+    depends_on:
+      user-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - diabuddy_net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: diabuddy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - diabuddy_net
+
+networks:
+  diabuddy_net:
+    driver: bridge
+
+volumes:
+  pg_data:
+  caddy_data:
+  caddy_config:
